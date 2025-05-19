@@ -31,6 +31,8 @@ Crea un archivo `.env` con las siguientes variables:
 ```
 TRUENAS_URL=https://tu-servidor-truenas/api/v2.0/
 API_KEY=tu-token-de-api
+TRUENAS_USER=truenas-user
+TRUENAS_PASS=truenas-user-pass
 ```
 
 ## Uso
