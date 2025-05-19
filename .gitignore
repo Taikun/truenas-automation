@@ -1,0 +1,28 @@
+# Archivos de configuración sensible
+.env
+
+# Archivos de entorno
+.venvmac/
+.venwin/
+.venlinux/
+
+
+# Entorno virtual
+venv/
+env/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de backup
+*.db
+*.tar
+
+# Archivos temporales
+*.tmp
+*.temp
+
+# Logs
+*.log
