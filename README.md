@@ -6,7 +6,7 @@ Un conjunto de scripts en Python para interactuar con la API de TrueNAS.
 
 - `check-pools-basic-auth.py`: Muestra el estado de los pools usando autenticación básica.
 - `check-pools-token.py`: Muestra el estado de los pools usando token de autenticación.
-- `true-backup.py`: Descarga un backup de la configuración del sistema TrueNAS. Soporta autenticación básica y por token.
+- `true-backup.py`: Descarga un backup de la configuración del sistema TrueNAS. Soporta autenticación básica y por token, y opcionalmente sube el backup a un servicio S3 compatible.
 
 ## Requisitos
 
@@ -60,6 +60,16 @@ Si `AUTH_METHOD` no se especifica, el script usará `token` como método por def
 - `TRUENAS_USER`: Tu nombre de usuario de TrueNAS. Necesario si `AUTH_METHOD` es `basic`.
 - `TRUENAS_PASS`: Tu contraseña de TrueNAS. Necesaria si `AUTH_METHOD` es `basic`.
 
+**Variables de Entorno Adicionales para S3 (Opcional)**:
+Si deseas subir el backup a un almacenamiento compatible con S3, configura las siguientes variables. Si no se configuran, el script solo guardará el backup localmente.
+
+- `S3_ENDPOINT_URL`: La URL del endpoint de tu servicio S3 (ej. `https://s3.tuproveedor.com` o `http://ip-minio:9000` para MinIO).
+- `S3_ACCESS_KEY_ID`: Tu Access Key ID de S3.
+- `S3_SECRET_ACCESS_KEY`: Tu Secret Access Key de S3.
+- `S3_BUCKET_NAME`: El nombre del bucket S3 donde se guardará el backup.
+- `S3_REGION`: La región S3 (ej. `us-east-1`). Opcional dependiendo de la configuración de tu proveedor S3.
+- `DELETE_LOCAL_BACKUP_AFTER_UPLOAD`: Define si el archivo de backup local debe eliminarse después de una subida exitosa a S3. Valores como `true`, `yes`, o `1` activarán la eliminación. Cualquier otro valor (o si la variable no está definida) conservará el archivo local (comportamiento por defecto: `false`).
+
 **Ejemplos de configuración del archivo `.env` para `true-backup.py`**:
 
 1.  **Usando Autenticación por Token (`AUTH_METHOD=token` o no especificado)**:
@@ -77,6 +87,20 @@ Si `AUTH_METHOD` no se especifica, el script usará `token` como método por def
     TRUENAS_USER=miusuario
     TRUENAS_PASS=micontraseña
     # API_KEY puede omitirse o dejarse en blanco
+    ```
+
+3.  **Usando Autenticación por Token y Subida a S3 (con eliminación del backup local)**:
+    ```dotenv
+    TRUENAS_URL=http://<truenas_ip_o_dominio>/api/v2.0/system/config/save
+    AUTH_METHOD=token
+    API_KEY=abcdef1234567890abcdef1234567890abcdef1234567890
+    
+    S3_ENDPOINT_URL=http://minio.local:9000
+    S3_ACCESS_KEY_ID=tu_access_key_id_s3
+    S3_SECRET_ACCESS_KEY=tu_secret_access_key_s3
+    S3_BUCKET_NAME=truenas-backups
+    S3_REGION=us-east-1 # Opcional, ajustar según sea necesario
+    DELETE_LOCAL_BACKUP_AFTER_UPLOAD=true
     ```
 
 **Nota sobre `TRUENAS_URL` para `true-backup.py`**: A diferencia de otros scripts que pueden usar una URL base de API, `true-backup.py` espera que `TRUENAS_URL` sea el endpoint específico desde el cual se descarga el archivo de configuración (backup). El script anexa los parámetros `secretseed=true` y `root_authorized_keys=true` a esta URL.
@@ -138,8 +162,45 @@ Esta sección describe cómo probar manualmente el script `true-backup.py` con a
     - Si las credenciales son inválidas, es probable que recibas un error HTTP `401 Unauthorized`.
     - Si `TRUENAS_URL` es incorrecta, verás errores similares a los del test con token.
 
+**3. Test de Subida a S3 (ejemplo con Autenticación por Token)**:
+
+*   **Prerrequisitos Adicionales**:
+    - Un bucket S3 debe existir y ser accesible con las credenciales proporcionadas.
+    - `boto3` debe estar instalado (incluido en `requirements.txt`).
+*   **Configuración del archivo `.env`**:
+    Asegúrate de que tu archivo `.env` incluya las variables de TrueNAS y S3:
+    ```dotenv
+    TRUENAS_URL=http://<tu-truenas>/api/v2.0/system/config/save
+    AUTH_METHOD=token
+    API_KEY=tu_api_key_valida
+
+    S3_ENDPOINT_URL=http://<tu-s3-endpoint> 
+    S3_ACCESS_KEY_ID=tu_access_key_s3
+    S3_SECRET_ACCESS_KEY=tu_secret_key_s3
+    S3_BUCKET_NAME=tu_bucket_s3
+    S3_REGION=tu_region_s3 # Opcional
+    DELETE_LOCAL_BACKUP_AFTER_UPLOAD=true # O 'false' para conservar el archivo local
+    ```
+*   **Ejecución del Script**:
+    ```bash
+    python true-backup.py
+    ```
+*   **Verificación de Éxito**:
+    - Mensajes de descarga de backup exitosa (como en los tests anteriores).
+    - Mensaje: `Intentando subir <nombre_archivo> a S3 bucket <S3_BUCKET_NAME> en <S3_ENDPOINT_URL>...`
+    - Mensaje: `Backup <nombre_archivo> subido correctamente al bucket <S3_BUCKET_NAME>.`
+    - Verifica que el archivo de backup (`.db`) aparezca en tu bucket S3.
+    - Si `DELETE_LOCAL_BACKUP_AFTER_UPLOAD` es `true`, deberías ver: `Archivo de backup local <nombre_archivo> eliminado correctamente.` y el archivo local ya no existirá.
+    - Si `DELETE_LOCAL_BACKUP_AFTER_UPLOAD` es `false` (o no está definido), deberías ver: `Archivo de backup local <nombre_archivo> conservado.` y el archivo local persistirá.
+*   **Verificación de Fallo (S3)**:
+    - Si las variables S3 no están completas: `Configuración S3 no proporcionada o incompleta. Saltando subida a S3.`
+    - Credenciales S3 incorrectas: `Error: Credenciales S3 no disponibles o incorrectas.`, `Error S3: AWS Access Key ID inválido.`, `Error S3: AWS Secret Access Key es incorrecto.`, o `Error S3: Acceso denegado...`
+    - Bucket no encontrado: `Error S3: El bucket '<S3_BUCKET_NAME>' no existe.`
+    - Problemas de red o endpoint S3 incorrecto: Pueden variar, incluyendo errores de conexión.
+    - En caso de fallo en la subida a S3, el script indicará: `Archivo de backup local <nombre_archivo> conservado debido a un error en la subida a S3.`
+
 **Nota Adicional**:
-Aunque el script muestra mensajes de éxito o error, si tienes dudas sobre si la operación de backup se realizó correctamente en el servidor TrueNAS (especialmente en caso de respuestas ambiguas o si quieres confirmar que el backup generado es válido), puedes revisar los logs del sistema en la interfaz de usuario de TrueNAS.
+Aunque el script muestra mensajes de éxito o error, si tienes dudas sobre si la operación de backup se realizó correctamente en el servidor TrueNAS (especialmente en caso de respuestas ambiguas o si quieres confirmar que el backup generado es válido), puedes revisar los logs del sistema en la interfaz de usuario de TrueNAS. Para S3, siempre verifica el contenido del bucket.
 
 ## Uso
 
@@ -157,6 +218,14 @@ Asegúrate de que el archivo `.env` esté configurado correctamente en el mismo 
 - `TRUENAS_USER`: Nombre de usuario para autenticación básica. Usado por `check-pools-basic-auth.py` y por `true-backup.py` cuando `AUTH_METHOD` es `basic`.
 - `TRUENAS_PASS`: Contraseña para autenticación básica. Usado por `check-pools-basic-auth.py` y por `true-backup.py` cuando `AUTH_METHOD` es `basic`.
 - `AUTH_METHOD`: Específico para `true-backup.py`. Define el método de autenticación (`token` o `basic`).
+
+**Variables Específicas para S3 (usadas por `true-backup.py`)**:
+- `S3_ENDPOINT_URL`: URL del endpoint S3.
+- `S3_ACCESS_KEY_ID`: Access Key ID para S3.
+- `S3_SECRET_ACCESS_KEY`: Secret Access Key para S3.
+- `S3_BUCKET_NAME`: Nombre del bucket S3.
+- `S3_REGION`: Región S3 (opcional).
+- `DELETE_LOCAL_BACKUP_AFTER_UPLOAD`: Controla si el backup local se elimina tras una subida exitosa a S3 (`true`, `yes`, `1` para eliminar).
 
 ## Error Handling
 

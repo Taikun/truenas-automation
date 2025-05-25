@@ -3,3 +3,4 @@ python-dotenv>=1.1.0
 rich>=13.7.0
 urllib3>=2.1.0
 ospython>=1.0.0
+boto3
